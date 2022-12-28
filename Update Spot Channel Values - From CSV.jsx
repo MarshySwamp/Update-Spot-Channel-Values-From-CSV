@@ -1,7 +1,13 @@
 /*
-Update Spot Channel Values - From CSV v1.jsx
-https://community.adobe.com/t5/photoshop-ecosystem-discussions/pantone-colors-converted-to-black-error/m-p/13269880
-v1.0 - 21st December 2022, Stephen Marsh
+Update Spot Channel Values - From CSV.jsx
+https://github.com/MarshySwamp/Update-Spot-Channel-Values-From-CSV
+v1.2 - 28th December 2022, Stephen Marsh
+
+For background info on this script:
+    https://prepression.blogspot.com/2022/12/photoshop-2022-pantone-color-book.html
+    https://community.adobe.com/t5/photoshop-ecosystem-discussions/pantone-colors-converted-to-black-error/td-p/13265464
+    https://community.adobe.com/t5/photoshop-ecosystem-discussions/changes-to-pantone-color-books/m-p/13353250
+    https://helpx.adobe.com/creative-cloud/adobe-color.html
 
 Notes:
 You must create a CSV file titled "Photoshop Spot Channel Lab Values.csv" in your ~user account /Documents directory.
@@ -16,67 +22,84 @@ etc.
 * You will need to have a Pantone Connect Premium Subscription in order to access the Lab values for Pantone solid colours.
 * Do not share/distribute your Pantone CSV lookup file.
 * A log file titled "Update Spot Channel Values Log.txt" will be created on the desktop.
+
+Thanks to @schroef for testing and feedback!
 */
 
 #target photoshop
 
-// Validate that the CSV exists and isn't blank
+// Remove the old log file if it exists
+var logFile = new File('~/Desktop/Update Spot Channel Values Log.txt');
+if (logFile.exists)
+logFile.remove();
+
+// Validate the CSV file
 var csvFile = File("~/Documents/Photoshop Spot Channel Lab Values.csv");
-if (csvFile.exists && csvFile.length > 0) {
+if (csvFile.exists) {
+    if (csvFile.length > 0) {
+        // Setup the script timer
+        var timeDiff = {
+            setStartTime: function () {
+                d = new Date();
+                time = d.getTime();
+            },
+            getDiff: function () {
+                d = new Date();
+                t = d.getTime() - time;
+                time = d.getTime();
+                return t;
+            }
+        };
+        timeDiff.setStartTime();
 
-    // Setup the script timer
-    var timeDiff = {
-        setStartTime: function () {
-            d = new Date();
-            time = d.getTime();
-        },
-        getDiff: function () {
-            d = new Date();
-            t = d.getTime() - time;
-            time = d.getTime();
-            return t;
+        // Save the current active channels
+        var savedChannelState = activeDocument.activeChannels;
+
+        // Save the channel visibility - by Mike Bro
+        var visibleChannels = visibleChannelNames();
+
+        // Set the channel processing counter
+        var processedChannelCounter = 0;
+
+        // For loop from the late Michael_L_Hale
+        for (var channelIndex = 0; channelIndex < activeDocument.channels.length; channelIndex++) {
+            if (activeDocument.channels[channelIndex].kind == "ChannelType.SPOTCOLOR") {
+                activeDocument.activeChannels = [activeDocument.channels[channelIndex]];
+                // Channel name
+                var chaName = activeDocument.activeChannels.toString().replace(/(?:\[Channel )(.+)(?:\])/, '$1');
+                // Run the main function
+                processSpotChannels();
+            }
         }
-    }
-    timeDiff.setStartTime();
 
-    // Save the current active channels
-    var savedChannelState = activeDocument.activeChannels;
+        // Restore the saved active channels
+        activeDocument.activeChannels = savedChannelState;
 
-    // Save the channel visibility - by Mike Bro
-    var visibleChannels = visibleChannelNames();
-
-    // Set the channel processing counter
-    var processedChannelCounter = 0;
-
-    // For loop from the late Michael_L_Hale
-    for (var channelIndex = 0; channelIndex < activeDocument.channels.length; channelIndex++) {
-        if (activeDocument.channels[channelIndex].kind == "ChannelType.SPOTCOLOR") {
-            activeDocument.activeChannels = [activeDocument.channels[channelIndex]];
-            processSpotChannels();
+        // Restore the channel visibility - by Mike Bro
+        for (var i = 0; i < visibleChannels.length; i++) {
+            var ActiveChannel = visibleChannels[i];
+            activeDocument.channels[ActiveChannel].visible = true;
         }
-    }
 
-    // Restore the saved active channels
-    activeDocument.activeChannels = savedChannelState;
-
-    // Restore the channel visibility - by Mike Bro
-    for (var i = 0; i < visibleChannels.length; i++) {
-        var ActiveChannel = visibleChannels[i];
-        activeDocument.channels[ActiveChannel].visible = true;
-    }
-
-    // End of script notification/timer
-    var spotChannelCounter = 0;
-    for (var channelIndex = 0; channelIndex < activeDocument.channels.length; channelIndex++) {
-        if (activeDocument.channels[channelIndex].kind == "ChannelType.SPOTCOLOR") {
-            spotChannelCounter++
+        // End of script notification/timer
+        var spotChannelCounter = 0;
+        for (var channelIndex = 0; channelIndex < activeDocument.channels.length; channelIndex++) {
+            if (activeDocument.channels[channelIndex].kind == "ChannelType.SPOTCOLOR") {
+                spotChannelCounter++;
+            }
         }
+        alert(processedChannelCounter + " of " + spotChannelCounter + " spot channels processed!" + "\n" + "(" + timeDiff.getDiff() / 1000 + " seconds)");
+
+    } else {
+        app.beep();
+        alert('The "Photoshop Spot Channel Lab Values.csv" file is blank!');
+        // Open the ~user's Documents directory
+        Folder('~/Documents').execute();
     }
-    alert(processedChannelCounter + " of " + spotChannelCounter + " spot channels processed!" + "\n" + "(" + timeDiff.getDiff() / 1000 + " seconds)");
 
 } else {
     app.beep();
-    alert('There is no valid file named "Photoshop Spot Channel Lab Values.csv" in the Documents folder!');
+    alert('The "Photoshop Spot Channel Lab Values.csv" file is missing from the Documents folder!');
     // Open the ~user's Documents directory
     Folder('~/Documents').execute();
 }
@@ -84,47 +107,45 @@ if (csvFile.exists && csvFile.length > 0) {
 
 ////////// Functions //////////
 
-function visibleChannelNames() {
-    /* 
-    Courtesy of Mike Bro
-    https://community.adobe.com/t5/photoshop-ecosystem-discussions/function-to-restore-original-channel-visibility/m-p/13433802
-    */
-    var activeChannels = [];
-    var visibleChannels = activeDocument.channels;
-    for (var i = 0; i < visibleChannels.length; i++) {
-        if (visibleChannels[i].visible == true) {
-            activeChannels.push(visibleChannels[i].name);
-
-        }
+function channelLogger(csvValue1, csvValue2, csvValue3) {
+    var os = $.os.toLowerCase().indexOf("mac") >= 0 ? "mac" : "windows";
+    if (os === "mac") {
+        logFileLF = "Unix";
+    } else {
+        logFileLF = "Windows";
     }
-    return activeChannels;
+    var logFile = new File('~/Desktop/Update Spot Channel Values Log.txt');
+    var dateTime = new Date().toLocaleString();
+    logFile.open("a");
+    logFile.encoding = "UTF-8";
+    logFile.lineFeed = logFileLF;
+    logFile.writeln(dateTime);
+    logFile.writeln(activeDocument.name);
+    logFile.writeln(chaName);
+    logFile.writeln("L: " + csvValue1 + ", a: " + csvValue2 + ", b: " + csvValue3 + "\n");
+    logFile.close();
 }
 
 function processSpotChannels() {
 
-    // Channel name
-    var chaName = activeDocument.activeChannels.toString().replace(/(?:\[Channel )(.+)(?:\])/, '$1');
-
-    // CSV stuff
+    // CSV open, read & close
     csvFile.open("r");
     var theData = csvFile.read();
     csvFile.close();
+    // CSV to array
     var theDataArray = parseCSV(theData);
-    // Extract header row
+    // Discard the header row
     var header = theDataArray.shift();
-
+    // Loop over the CSV data
     for (var i = 0; i < theDataArray.length; i++) {
-
         // CSV array variables
         var csvName = theDataArray[i][0];
         var csvValue1 = theDataArray[i][1];
         var csvValue2 = theDataArray[i][2];
         var csvValue3 = theDataArray[i][3];
-
         // Case sensitive channel match to CSV name
-        // To Do: Is it possible to make a case insensitive regex match using a variable?
-        if (csvName.match(chaName)) {
-
+        // To do: Is it possible to make a case insensitive regex match using a variable?
+        if (csvName.match(chaName) !== null) {
             // Change spot chanel Lab values
             function s2t(s) {
                 return app.stringIDToTypeID(s);
@@ -141,32 +162,12 @@ function processSpotChannels() {
             descriptor2.putObject(s2t("color"), s2t("labColor"), descriptor3);
             descriptor.putObject(s2t("to"), s2t("spotColorChannel"), descriptor2);
             executeAction(s2t("set"), descriptor, DialogModes.NO);
-
             // Increment the counter for each channel processed
             processedChannelCounter++;
-
             // Write changes to desktop log
-            var os = $.os.toLowerCase().indexOf("mac") >= 0 ? "mac" : "windows";
-            if (os === "mac") {
-                logFileLF = "Unix";
-            } else {
-                logFileLF = "Windows";
-            }
-            var logFile = new File('~/Desktop/Update Spot Channel Values Log.txt');
-            if (logFile.exists)
-                var dateTime = new Date().toLocaleString();
-            // change "a" to "w" to write (replace) rather than to append to existing content
-            logFile.open("a");
-            logFile.encoding = "UTF-8";
-            logFile.lineFeed = logFileLF;
-            logFile.writeln(dateTime);
-            logFile.writeln(activeDocument.name);
-            logFile.writeln(chaName);
-            logFile.writeln("L: " + csvValue1 + ", a: " + csvValue2 + ", b: " + csvValue3 + "\n");
-            logFile.close();
-
+            channelLogger(csvValue1, csvValue2, csvValue3);
         }
-    }
+    } // To do: Add logging for skipped channels?
 
     function parseCSV(theData, delimiter) {
         /* 
@@ -252,4 +253,19 @@ function processSpotChannels() {
         }
         return result;
     }
+}
+
+function visibleChannelNames() {
+    /* 
+    Courtesy of Mike Bro
+    https://community.adobe.com/t5/photoshop-ecosystem-discussions/function-to-restore-original-channel-visibility/m-p/13433802
+    */
+    var activeChannels = [];
+    var visibleChannels = activeDocument.channels;
+    for (var i = 0; i < visibleChannels.length; i++) {
+        if (visibleChannels[i].visible === true) {
+            activeChannels.push(visibleChannels[i].name);
+        }
+    }
+    return activeChannels;
 }
